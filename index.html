@@ -351,75 +351,87 @@
 
   /* ===== CARRUSEL DE HORA ===== */
   .time-carousel {
-    display: flex; gap: 8px; justify-content: center; align-items: center;
-    margin: 8px 0;
+    display: flex; gap: 0; justify-content: center; align-items: center;
+    margin: 12px 0 4px;
+    padding: 0 8px;
   }
 
   .carousel-col {
-    display: flex; flex-direction: column; align-items: center; gap: 0;
-    position: relative; height: 180px; overflow: hidden;
-    width: 72px;
+    position: relative;
+    height: 200px;
+    width: 80px;
+    overflow: hidden;
+    flex-shrink: 0;
   }
 
+  /* fades top y bottom */
   .carousel-col::before, .carousel-col::after {
-    content: ''; position: absolute; left: 0; right: 0; height: 60px;
-    z-index: 2; pointer-events: none;
+    content: ''; position: absolute; left: 0; right: 0;
+    height: 70px; z-index: 2; pointer-events: none;
   }
+  .carousel-col::before { top: 0; background: linear-gradient(to bottom, #1C1C1F 30%, transparent); }
+  .carousel-col::after  { bottom: 0; background: linear-gradient(to top,   #1C1C1F 30%, transparent); }
 
-  .carousel-col::before {
-    top: 0;
-    background: linear-gradient(to bottom, #1C1C1F, transparent);
-  }
-
-  .carousel-col::after {
-    bottom: 0;
-    background: linear-gradient(to top, #1C1C1F, transparent);
-  }
-
+  /* líneas del selector centrado */
+  .carousel-col::before { border-bottom: none; }
   .carousel-selector {
-    position: absolute; top: 50%; left: 0; right: 0;
-    height: 44px; margin-top: -22px;
-    border-top: 1px solid var(--accent);
-    border-bottom: 1px solid var(--accent);
-    border-radius: 8px;
-    pointer-events: none; z-index: 1;
+    position: absolute; top: 50%; left: 6px; right: 6px;
+    height: 48px; margin-top: -24px;
+    border-top: 1px solid rgba(224,162,60,0.6);
+    border-bottom: 1px solid rgba(224,162,60,0.6);
+    border-radius: 10px;
+    background: rgba(224,162,60,0.06);
+    pointer-events: none; z-index: 3;
   }
 
-  .carousel-list {
+  .carousel-track {
     display: flex; flex-direction: column; align-items: center;
-    transition: transform 0.2s cubic-bezier(0.2,0,0,1);
-    cursor: grab; touch-action: none;
+    touch-action: none; cursor: grab; will-change: transform;
   }
-
-  .carousel-list:active { cursor: grabbing; }
+  .carousel-track:active { cursor: grabbing; }
 
   .carousel-item {
-    height: 44px; display: flex; align-items: center; justify-content: center;
-    font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 600;
-    color: var(--text-dim); min-width: 60px; flex-shrink: 0;
-    transition: color 0.15s ease, font-size 0.15s ease;
+    height: 48px;
+    width: 80px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Inter', sans-serif;
+    font-size: 20px; font-weight: 500;
+    color: #555;
+    flex-shrink: 0;
+    transition: color 0.12s, font-size 0.12s, font-weight 0.12s;
+    user-select: none;
+  }
+  .carousel-item.active {
+    color: var(--text);
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .carousel-item.near {
+    color: #888;
+    font-size: 22px;
   }
 
-  .carousel-item.active { color: var(--text); font-size: 26px; }
-
   .carousel-sep {
-    font-size: 28px; font-weight: 700; color: var(--accent);
-    display: flex; align-items: center; margin-top: -4px;
+    font-size: 32px; font-weight: 700; color: var(--accent);
+    padding: 0 2px;
+    margin-top: 2px;
+    flex-shrink: 0;
   }
 
   .ampm-col {
-    display: flex; flex-direction: column; gap: 6px;
-    justify-content: center; margin-left: 8px;
+    display: flex; flex-direction: column; gap: 8px;
+    justify-content: center; margin-left: 12px;
   }
 
   .ampm-btn {
-    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600;
-    padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600;
+    padding: 10px 14px; border-radius: 10px; cursor: pointer;
     border: 1px solid var(--border); background: none;
-    color: var(--text-dim); transition: all 0.12s ease;
+    color: var(--text-dim); transition: all 0.15s ease;
+    min-width: 52px; text-align: center;
   }
-
   .ampm-btn.active { background: var(--accent); color: #121214; border-color: var(--accent); }
+  .ampm-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
 
 
   .task {
@@ -1064,93 +1076,140 @@
     header.appendChild(title); header.appendChild(actions);
     sheet.appendChild(header);
 
-    function makeCarousel(items, getCurrent, setCurrent) {
+    const ITEM_H = 48;
+
+    function makeCarousel(items, initVal, onChange) {
+      let currentIdx = items.indexOf(initVal);
+      if (currentIdx < 0) currentIdx = 0;
+
       const col = document.createElement('div');
       col.className = 'carousel-col';
+
       const sel = document.createElement('div');
       sel.className = 'carousel-selector';
       col.appendChild(sel);
-      const list = document.createElement('div');
-      list.className = 'carousel-list';
 
-      // Padding top/bottom so first/last can center
-      const pad = 2;
-      for (let p = 0; p < pad; p++) {
+      const track = document.createElement('div');
+      track.className = 'carousel-track';
+
+      // 2 items de padding arriba y abajo para que el primero/último pueda centrarse
+      const PAD = 2;
+      const totalItems = items.length + PAD * 2;
+      for (let i = 0; i < PAD; i++) {
         const ph = document.createElement('div');
-        ph.className = 'carousel-item'; ph.textContent = '';
-        list.appendChild(ph);
+        ph.className = 'carousel-item';
+        track.appendChild(ph);
       }
-      items.forEach((val, idx) => {
+      items.forEach(val => {
         const el = document.createElement('div');
-        el.className = 'carousel-item' + (val === getCurrent() ? ' active' : '');
+        el.className = 'carousel-item';
         el.textContent = String(val).padStart(2, '0');
-        list.appendChild(el);
+        track.appendChild(el);
       });
-      for (let p = 0; p < pad; p++) {
+      for (let i = 0; i < PAD; i++) {
         const ph = document.createElement('div');
-        ph.className = 'carousel-item'; ph.textContent = '';
-        list.appendChild(ph);
+        ph.className = 'carousel-item';
+        track.appendChild(ph);
       }
 
-      const ITEM_H = 44;
-      let startY = null, startOffset = 0, currentOffset = 0;
+      // offsetY = cuántos px mueve el track desde su posición natural (idx=0 centrado)
+      // centrar = col height/2 - ITEM_H/2 - (idx + PAD) * ITEM_H
+      let offsetY = 0;
+      let velY = 0;
+      let lastY = null, lastT = null;
+      let rafId = null;
 
-      function getOffset() {
-        const idx = items.indexOf(getCurrent());
-        return -idx * ITEM_H;
+      function idxToOffset(idx) {
+        return -(idx * ITEM_H);
       }
 
-      function snapTo(val) {
-        setCurrent(val);
-        currentOffset = getOffset();
-        list.style.transform = 'translateY(' + currentOffset + 'px)';
-        list.querySelectorAll('.carousel-item').forEach((el, i) => {
-          const realIdx = i - pad;
-          el.classList.toggle('active', realIdx >= 0 && items[realIdx] === getCurrent());
+      function updateItems(rawOffset) {
+        const rawIdx = -rawOffset / ITEM_H;
+        const els = track.querySelectorAll('.carousel-item');
+        els.forEach((el, i) => {
+          const realIdx = i - PAD;
+          const dist = Math.abs(realIdx - rawIdx);
+          el.classList.remove('active', 'near');
+          if (dist < 0.6) el.classList.add('active');
+          else if (dist < 1.5) el.classList.add('near');
         });
       }
 
-      function snapNearest(offset) {
-        const rawIdx = Math.round(-offset / ITEM_H);
-        const clamped = Math.max(0, Math.min(items.length - 1, rawIdx));
-        snapTo(items[clamped]);
+      function applyOffset(y, animate) {
+        track.style.transition = animate ? 'transform 0.32s cubic-bezier(0.25,0.46,0.45,0.94)' : 'none';
+        track.style.transform = 'translateY(' + y + 'px)';
+        updateItems(y);
       }
 
-      snapTo(getCurrent());
+      function snapTo(idx) {
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        currentIdx = idx;
+        offsetY = idxToOffset(idx);
+        applyOffset(offsetY, true);
+        onChange(items[currentIdx]);
+      }
 
-      list.addEventListener('pointerdown', e => {
-        startY = e.clientY;
-        startOffset = currentOffset;
-        list.style.transition = 'none';
-        list.setPointerCapture(e.pointerId);
+      function snapNearest() {
+        const rawIdx = Math.round(-offsetY / ITEM_H);
+        snapTo(rawIdx);
+      }
+
+      // inicializar
+      offsetY = idxToOffset(currentIdx);
+      applyOffset(offsetY, false);
+
+      // inercia
+      function momentumLoop() {
+        offsetY += velY;
+        velY *= 0.92;
+        applyOffset(offsetY, false);
+        if (Math.abs(velY) > 0.5) {
+          rafId = requestAnimationFrame(momentumLoop);
+        } else {
+          cancelAnimationFrame(rafId);
+          snapNearest();
+        }
+      }
+
+      track.addEventListener('pointerdown', e => {
+        cancelAnimationFrame(rafId);
+        track.style.transition = 'none';
+        lastY = e.clientY; lastT = Date.now(); velY = 0;
+        track.setPointerCapture(e.pointerId);
         e.preventDefault();
       });
 
-      list.addEventListener('pointermove', e => {
-        if (startY === null) return;
-        const dy = e.clientY - startY;
-        currentOffset = startOffset + dy;
-        list.style.transform = 'translateY(' + currentOffset + 'px)';
+      track.addEventListener('pointermove', e => {
+        if (lastY === null) return;
+        const dy = e.clientY - lastY;
+        const dt = Date.now() - lastT;
+        velY = dt > 0 ? dy / dt * 16 : 0; // vel en px/frame@60fps
+        offsetY += dy;
+        lastY = e.clientY; lastT = Date.now();
+        applyOffset(offsetY, false);
       });
 
-      list.addEventListener('pointerup', e => {
-        if (startY === null) return;
-        list.style.transition = '';
-        snapNearest(currentOffset);
-        startY = null;
+      track.addEventListener('pointerup', () => {
+        if (lastY === null) return;
+        lastY = null;
+        if (Math.abs(velY) > 2) {
+          rafId = requestAnimationFrame(momentumLoop);
+        } else {
+          snapNearest();
+        }
       });
 
-      col.appendChild(list);
-      return { col, snapTo };
+      col.appendChild(track);
+      return col;
     }
 
     const timeRow = document.createElement('div');
     timeRow.className = 'time-carousel';
 
-    const { col: hourCol } = makeCarousel(hours, () => selHour, v => { selHour = v; });
+    const hourCol = makeCarousel(hours, selHour, v => { selHour = v; });
     const sep = document.createElement('div');
     sep.className = 'carousel-sep'; sep.textContent = ':';
-    const { col: minCol } = makeCarousel(mins, () => selMin, v => { selMin = v; });
+    const minCol = makeCarousel(mins, selMin, v => { selMin = v; });
 
     const ampmCol = document.createElement('div');
     ampmCol.className = 'ampm-col';
