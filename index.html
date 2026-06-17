@@ -667,60 +667,111 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     hdr.appendChild(titleWrap);hdr.appendChild(closeBtn);panel.appendChild(hdr);
     const body=document.createElement('div');body.className='agenda-body';
 
-    const todayD=new Date();const todayStr2=String(todayD.getDate()).padStart(2,'0')+'/'+String(todayD.getMonth()+1).padStart(2,'0')+'/'+todayD.getFullYear();
+    const todayD=new Date();
+    const todayStr2=String(todayD.getDate()).padStart(2,'0')+'/'+String(todayD.getMonth()+1).padStart(2,'0')+'/'+todayD.getFullYear();
 
-    // Collect all tasks with time (for today or no date)
-    const allTasks=[];
-    state.columns.forEach((col,ci)=>col.tasks.forEach(t=>{allTasks.push({...t,colName:col.title});}));
-    state.extra.forEach(t=>allTasks.push({...t,colName:'EXTRAS'}));
-
-    const timedToday=[];const untimed=[];
-    allTasks.forEach(t=>{
-      if(t.time) {
-        // show if no date OR date is today
-        if(!t.date||t.date===todayStr2||t.date.startsWith(String(todayD.getDate()).padStart(2,'0')+'/'+String(todayD.getMonth()+1).padStart(2,'0'))) {
-          timedToday.push(t);
-        }
-      } else {
-        if(!t.date||t.date===todayStr2||t.date.startsWith(String(todayD.getDate()).padStart(2,'0')+'/'+String(todayD.getMonth()+1).padStart(2,'0'))) {
-          untimed.push(t);
-        }
+    // Función para encontrar y togglear la tarea real en state
+    function toggleFromAgenda(id) {
+      let found=false;
+      state.columns.forEach(col=>{
+        const t=col.tasks.find(t=>t.id===id);
+        if(t){t.done=!t.done;found=true;}
+      });
+      if(!found){
+        const t=state.extra.find(t=>t.id===id);
+        if(t) t.done=!t.done;
       }
-    });
+      saveState();
+      render(); // actualiza la vista principal
+      buildAgendaBody(); // re-renderiza el panel
+    }
 
-    // Sort timed tasks by time
-    timedToday.sort((a,b)=>{
-      const pa=parseTaskDate(a)||new Date(0,0,0,parseRawTime(a.time).h,parseRawTime(a.time).m);
-      const pb=parseTaskDate(b)||new Date(0,0,0,parseRawTime(b.time).h,parseRawTime(b.time).m);
-      return pa-pb;
-    });
+    // Recoge tareas relevantes para hoy desde state (no copia, usa ids)
+    function getAgendaTasks() {
+      const allTasks=[];
+      state.columns.forEach((col)=>col.tasks.forEach(t=>{allTasks.push({...t,colName:col.title});}));
+      state.extra.forEach(t=>allTasks.push({...t,colName:'EXTRAS'}));
+      const timed=[];const untimed=[];
+      allTasks.forEach(t=>{
+        const matchesDate=!t.date||t.date===todayStr2||
+          t.date.startsWith(String(todayD.getDate()).padStart(2,'0')+'/'+String(todayD.getMonth()+1).padStart(2,'0'));
+        if(!matchesDate) return;
+        if(t.time) timed.push(t); else untimed.push(t);
+      });
+      timed.sort((a,b)=>{
+        const pa=parseTaskDate(a)||new Date(0,0,0,parseRawTime(a.time).h,parseRawTime(a.time).m);
+        const pb=parseTaskDate(b)||new Date(0,0,0,parseRawTime(b.time).h,parseRawTime(b.time).m);
+        return pa-pb;
+      });
+      return {timed,untimed};
+    }
 
-    if(timedToday.length===0&&untimed.length===0) {
-      const empty=document.createElement('div');empty.className='agenda-empty';
-      empty.innerHTML='No hay pendientes con hora o fecha asignada para hoy.<br>Asigna una hora a tus tareas para verlas aquí.';
-      body.appendChild(empty);
-    } else {
-      timedToday.forEach(t=>{
+    function buildAgendaBody() {
+      body.innerHTML='';
+      const {timed,untimed}=getAgendaTasks();
+
+      if(timed.length===0&&untimed.length===0) {
+        const empty=document.createElement('div');empty.className='agenda-empty';
+        empty.innerHTML='No hay pendientes para hoy.<br>Asigna una hora o fecha a tus tareas para verlas aquí.';
+        body.appendChild(empty);
+        return;
+      }
+
+      timed.forEach(t=>{
         const slot=document.createElement('div');slot.className='agenda-slot';
+
         const timeEl=document.createElement('div');timeEl.className='agenda-time';timeEl.textContent=t.time;
-        const item=document.createElement('div');item.className='agenda-item'+(t.done?' done-item':'');
-        const lbl=document.createElement('div');lbl.className='agenda-item-label'+(t.done?' done-item-label':'');
+
+        const item=document.createElement('div');
+        item.className='agenda-item'+(t.done?' done-item':'');
+        item.style.cursor='pointer';
+        item.title='Toca para marcar/desmarcar';
+
+        // Checkbox visual
+        const checkRow=document.createElement('div');
+        checkRow.style.cssText='display:flex;align-items:center;gap:10px;';
+        const checkEl=document.createElement('div');
+        checkEl.style.cssText='width:16px;height:16px;border-radius:4px;border:2px solid '+(t.done?'var(--accent)':'var(--text-dim)')+';flex-shrink:0;display:flex;align-items:center;justify-content:center;background:'+(t.done?'var(--accent)':'transparent')+';transition:all .15s;';
+        if(t.done) checkEl.innerHTML='<svg width="9" height="9" viewBox="0 0 12 12"><path d="M1 6L4.5 9.5L11 2" stroke="#121214" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+        const lbl=document.createElement('div');
+        lbl.className='agenda-item-label'+(t.done?' done-item-label':'');
         lbl.textContent=t.label;
-        const col=document.createElement('div');col.className='agenda-item-col';col.textContent=t.colName;
-        item.appendChild(lbl);item.appendChild(col);
+        checkRow.appendChild(checkEl);checkRow.appendChild(lbl);
+
+        const colLbl=document.createElement('div');colLbl.className='agenda-item-col';colLbl.textContent=t.colName;
+        colLbl.style.marginLeft='26px';
+
+        item.appendChild(checkRow);item.appendChild(colLbl);
+        item.addEventListener('click',()=>toggleFromAgenda(t.id));
+
         slot.appendChild(timeEl);slot.appendChild(item);body.appendChild(slot);
       });
+
       if(untimed.length>0) {
         const section=document.createElement('div');section.className='agenda-no-time';
         const sTitle=document.createElement('div');sTitle.className='agenda-no-time-title';sTitle.textContent='Sin hora asignada';
         section.appendChild(sTitle);
         untimed.forEach(t=>{
-          const chip=document.createElement('div');chip.className='agenda-chip'+(t.done?' done-chip':'');
-          chip.textContent=t.label;section.appendChild(chip);
+          const chip=document.createElement('div');
+          chip.className='agenda-chip'+(t.done?' done-chip':'');
+          chip.style.cursor='pointer';
+          chip.title='Toca para marcar/desmarcar';
+
+          const checkEl=document.createElement('span');
+          checkEl.style.cssText='display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:3px;border:1.5px solid '+(t.done?'var(--accent)':'#555')+';margin-right:7px;background:'+(t.done?'var(--accent)':'transparent')+';flex-shrink:0;';
+          if(t.done) checkEl.innerHTML='<svg width="8" height="8" viewBox="0 0 12 12"><path d="M1 6L4.5 9.5L11 2" stroke="#121214" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+          chip.appendChild(checkEl);
+          chip.appendChild(document.createTextNode(t.label));
+          chip.addEventListener('click',()=>toggleFromAgenda(t.id));
+          section.appendChild(chip);
         });
         body.appendChild(section);
       }
     }
+
+    buildAgendaBody();
     panel.appendChild(body);overlay.appendChild(panel);document.body.appendChild(overlay);
   }
 
