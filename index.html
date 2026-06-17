@@ -544,12 +544,15 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     header.appendChild(titleEl);header.appendChild(acts);sheet.appendChild(header);
 
     const ITEM_H=48;
+    const COL_H=192; // debe coincidir con height del .carousel-col en CSS
+
     function makeCarousel(items,initVal,onChange) {
       let currentIdx=Math.max(0,items.indexOf(initVal));
       const col=document.createElement('div');col.className='carousel-col';
       const sel=document.createElement('div');sel.className='carousel-selector';col.appendChild(sel);
       const track=document.createElement('div');track.className='carousel-track';
       const PAD=2;
+
       for(let i=0;i<PAD;i++){const ph=document.createElement('div');ph.className='carousel-item';track.appendChild(ph);}
       items.forEach(val=>{
         const el=document.createElement('div');el.className='carousel-item';
@@ -557,57 +560,72 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
       });
       for(let i=0;i<PAD;i++){const ph=document.createElement('div');ph.className='carousel-item';track.appendChild(ph);}
 
+      // El offset para centrar el ítem idx en el selector:
+      // El selector está en COL_H/2 - ITEM_H/2 desde el top del col.
+      // El ítem idx (incluyendo PAD) empieza en (idx+PAD)*ITEM_H desde el top del track.
+      // Para centrarlo: translateY = COL_H/2 - ITEM_H/2 - (idx+PAD)*ITEM_H
+      const CENTER = COL_H/2 - ITEM_H/2;
+      function idxToOffset(idx){ return CENTER - (idx + PAD) * ITEM_H; }
+
       let offsetY=0,velY=0,lastY=null,lastT=null,rafId=null;
-      function idxToOffset(idx){return -idx*ITEM_H;}
-      function updateItems(rawOffset) {
-        const rawIdx=-rawOffset/ITEM_H;
+
+      function updateItems(rawOffsetY) {
+        // ¿qué índice de item real está centrado ahora?
+        const rawRealIdx = (CENTER - rawOffsetY) / ITEM_H - PAD;
         const els=track.querySelectorAll('.carousel-item');
         els.forEach((el,i)=>{
           const realIdx=i-PAD;
-          const dist=Math.abs(realIdx-rawIdx);
+          const dist=Math.abs(realIdx-rawRealIdx);
           el.classList.remove('active','near');
-          if(dist<0.6)el.classList.add('active');
-          else if(dist<1.6)el.classList.add('near');
+          if(dist<0.6) el.classList.add('active');
+          else if(dist<1.6) el.classList.add('near');
         });
       }
+
       function applyOffset(y,animate) {
         track.style.transition=animate?'transform .28s cubic-bezier(.25,.46,.45,.94)':'none';
         track.style.transform='translateY('+y+'px)';
         updateItems(y);
       }
+
       function snapTo(idx) {
         idx=Math.max(0,Math.min(items.length-1,idx));
-        currentIdx=idx;offsetY=idxToOffset(idx);
-        applyOffset(offsetY,true);onChange(items[currentIdx]);
+        currentIdx=idx; offsetY=idxToOffset(idx);
+        applyOffset(offsetY,true); onChange(items[currentIdx]);
       }
+
       function snapNearest() {
-        // clamp so we never go out of bounds
-        const rawIdx=Math.round(-offsetY/ITEM_H);
-        snapTo(rawIdx);
+        const rawRealIdx = (CENTER - offsetY) / ITEM_H - PAD;
+        snapTo(Math.round(rawRealIdx));
       }
-      offsetY=idxToOffset(currentIdx);applyOffset(offsetY,false);
+
+      // inicializar en posición correcta
+      offsetY=idxToOffset(currentIdx); applyOffset(offsetY,false);
+
       function momentumLoop() {
-        offsetY+=velY;velY*=0.88;applyOffset(offsetY,false);
-        if(Math.abs(velY)>0.5){rafId=requestAnimationFrame(momentumLoop);}
-        else{cancelAnimationFrame(rafId);snapNearest();}
+        offsetY+=velY; velY*=0.88; applyOffset(offsetY,false);
+        if(Math.abs(velY)>0.5){ rafId=requestAnimationFrame(momentumLoop); }
+        else{ cancelAnimationFrame(rafId); snapNearest(); }
       }
+
       track.addEventListener('pointerdown',e=>{
-        cancelAnimationFrame(rafId);track.style.transition='none';
-        lastY=e.clientY;lastT=Date.now();velY=0;
-        track.setPointerCapture(e.pointerId);e.preventDefault();
+        cancelAnimationFrame(rafId); track.style.transition='none';
+        lastY=e.clientY; lastT=Date.now(); velY=0;
+        track.setPointerCapture(e.pointerId); e.preventDefault();
       });
       track.addEventListener('pointermove',e=>{
         if(lastY===null) return;
-        const dy=e.clientY-lastY;const dt=Date.now()-lastT;
+        const dy=e.clientY-lastY; const dt=Date.now()-lastT;
         velY=dt>0?dy/dt*16:0;
-        offsetY+=dy;lastY=e.clientY;lastT=Date.now();applyOffset(offsetY,false);
+        offsetY+=dy; lastY=e.clientY; lastT=Date.now(); applyOffset(offsetY,false);
       });
       track.addEventListener('pointerup',()=>{
-        if(lastY===null) return;lastY=null;
-        if(Math.abs(velY)>2){rafId=requestAnimationFrame(momentumLoop);}
-        else{snapNearest();}
+        if(lastY===null) return; lastY=null;
+        if(Math.abs(velY)>2){ rafId=requestAnimationFrame(momentumLoop); }
+        else{ snapNearest(); }
       });
-      col.appendChild(track);return col;
+
+      col.appendChild(track); return col;
     }
 
     const timeRow=document.createElement('div');timeRow.className='time-carousel';
