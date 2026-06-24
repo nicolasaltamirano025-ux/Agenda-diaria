@@ -79,9 +79,10 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
 .checkbox{width:18px;height:18px;border-radius:5px;border:2px solid var(--text-dim);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;}
 .task.done .checkbox{background:var(--accent);border-color:var(--accent);}
 .checkbox svg{opacity:0;transition:opacity .15s;}.task.done .checkbox svg{opacity:1;}
-.task-label{font-size:13px;font-weight:500;font-family:'Inter',sans-serif;flex:1;min-width:0;background:transparent;border:none;outline:none;padding:0;color:var(--text);cursor:text;transition:color .15s;}
+.task-label{font-size:13px;font-weight:500;font-family:'Inter',sans-serif;flex:1;min-width:0;background:transparent;border:none;outline:none;padding:0;color:var(--text);cursor:text;transition:color .15s;word-break:break-word;white-space:pre-wrap;line-height:1.4;}
 .task-label:focus{color:var(--accent);}
-.task.done .task-label{color:var(--text-dim);text-decoration:line-through;}
+.task-label:empty::before{content:attr(data-placeholder);color:#444;pointer-events:none;}
+.done-label{color:var(--text-dim);text-decoration:line-through;}
 .task-meta{display:flex;flex-direction:column;gap:3px;flex-shrink:0;}
 .task-time-btn,.task-date-btn{width:72px;background:transparent;border:1px solid var(--border);border-radius:5px;padding:3px 5px;color:var(--text-dim);font-family:'Inter',sans-serif;font-size:10px;text-align:left;cursor:pointer;transition:border-color .15s,color .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .task-time-btn:hover,.task-date-btn:hover{border-color:var(--accent);color:var(--text);}
@@ -793,9 +794,20 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     handle.innerHTML='<svg width="10" height="16" viewBox="0 0 10 16"><circle cx="2" cy="2" r="1.5" fill="currentColor"/><circle cx="8" cy="2" r="1.5" fill="currentColor"/><circle cx="2" cy="8" r="1.5" fill="currentColor"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/><circle cx="2" cy="14" r="1.5" fill="currentColor"/><circle cx="8" cy="14" r="1.5" fill="currentColor"/></svg>';
     const check=document.createElement('div');check.className='checkbox';
     check.innerHTML='<svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 6L4.5 9.5L11 2" stroke="#121214" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const label=document.createElement('input');label.type='text';label.className='task-label';label.value=task.label;
-    label.addEventListener('change',()=>{task.label=label.value.trim()||task.label;label.value=task.label;saveState();});
-    label.addEventListener('keydown',e=>{if(e.key==='Enter')label.blur();});
+    const label=document.createElement('div');
+    label.className='task-label'+(task.done?' done-label':'');
+    label.contentEditable='true';
+    label.textContent=task.label;
+    label.setAttribute('data-placeholder','Pendiente...');
+    label.addEventListener('blur',()=>{
+      const trimmed=label.textContent.trim();
+      task.label=trimmed||task.label;
+      label.textContent=task.label;
+      saveState();
+    });
+    label.addEventListener('keydown',e=>{
+      if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();label.blur();}
+    });
     const meta=document.createElement('div');meta.className='task-meta';
     const timeBtn=document.createElement('button');timeBtn.className='task-time-btn';
     timeBtn.textContent=task.time||'+ Hora';
