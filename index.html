@@ -283,9 +283,11 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
   }
 
   function applyDailyReset() {
+    // Solo actualiza la fecha de referencia sin resetear checks
+    // El reinicio es únicamente manual via botón "Reiniciar día"
     if(state.lastReset!==todayStr()) {
-      getAllTasks().forEach(t=>t.done=false);
-      state.lastReset=todayStr(); return true;
+      state.lastReset=todayStr();
+      return true; // guarda la fecha actualizada pero sin borrar checks
     }
     return false;
   }
