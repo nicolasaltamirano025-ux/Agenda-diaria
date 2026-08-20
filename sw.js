@@ -1,4 +1,4 @@
-const CACHE_NAME = 'disciplina-diaria-v12';
+const CACHE_NAME = 'disciplina-diaria-v13';
 const ASSETS = [
   './',
   './index.html',
