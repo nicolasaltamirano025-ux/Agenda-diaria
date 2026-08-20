@@ -13,8 +13,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script defer src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script defer src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
 <style>
 :root {
   --bg:#121214; --surface:#1C1C1F; --surface-hover:#232327;
@@ -228,7 +226,6 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     appId: "1:1024392270069:web:f84a85cf57f5d3174175bc"
   };
 
-  let stateRef = null;
   let state = null;
   let dragState = null;
   let activePicker = null;
@@ -334,6 +331,61 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     else el.textContent='● solo local';
   }
 
+  const REST_URL = firebaseConfig.databaseURL + '/agenda-diaria.json';
+  let syncTimer = null;
+
+  async function fetchWithTimeout(url, options, ms) {
+    const controller = new AbortController();
+    const t = setTimeout(()=>controller.abort(), ms);
+    try {
+      const res = await fetch(url, Object.assign({}, options, {signal: controller.signal}));
+      clearTimeout(t);
+      return res;
+    } catch(e) {
+      clearTimeout(t);
+      throw e;
+    }
+  }
+
+  async function pullRemote() {
+    try {
+      const res = await fetchWithTimeout(REST_URL, {method:'GET'}, 6000);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const remote = await res.json();
+      let needsSave=false;
+      if(remote && (remote.lastModified||0) >= (state.lastModified||0)) {
+        state = remote;
+      } else if(!remote) {
+        needsSave = true;
+      }
+      if(!state.columns && !state.tasks) { state=getDefaultState(); needsSave=true; }
+      if(ensureShape()) needsSave=true;
+      if(applyDailyReset()) needsSave=true;
+      try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }catch(e){}
+      render();
+      setSyncStatus('online');
+      if(needsSave) pushRemote();
+    } catch(e) {
+      console.error('pullRemote:', e.message);
+      setSyncStatus('offline');
+    }
+  }
+
+  async function pushRemote() {
+    try {
+      const res = await fetchWithTimeout(REST_URL, {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(state)
+      }, 6000);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      setSyncStatus('online');
+    } catch(e) {
+      console.error('pushRemote:', e.message);
+      setSyncStatus('offline');
+    }
+  }
+
   async function loadState() {
     try { const raw=localStorage.getItem(STORAGE_KEY); if(raw) state=JSON.parse(raw); } catch(e) {}
     if(!state||(!state.columns&&!state.tasks)) state=getDefaultState();
@@ -343,43 +395,19 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     document.getElementById('extra-section').style.display='block';
     render();
 
-    // === MODO DIAGNÓSTICO: Firebase desactivado temporalmente ===
-    // Para aislar si Firebase/la sincronización es la causa de que la página
-    // se congele en algunas computadoras. Cambiar a false para reactivar.
-    const DIAGNOSTIC_NO_FIREBASE = true;
-    if(DIAGNOSTIC_NO_FIREBASE) { setSyncStatus('local'); return; }
-
     if(firebaseConfig.apiKey.indexOf('PEGA')===0) { setSyncStatus('local'); return; }
 
-    // Timeout de seguridad: si Firebase no responde en 5s, dejar de esperar
-    // y seguir en modo local en vez de quedarse en "conectando..." para siempre
-    let resolved=false;
-    const safetyTimeout=setTimeout(()=>{
-      if(!resolved){ resolved=true; setSyncStatus('offline'); }
-    },5000);
-
-    try {
-      firebase.initializeApp(firebaseConfig);
-      stateRef=firebase.database().ref('agenda-diaria');
-      stateRef.on('value',snapshot=>{
-        resolved=true; clearTimeout(safetyTimeout);
-        const remote=snapshot.val(); let needsSave=false;
-        if(remote&&(remote.lastModified||0)>=(state.lastModified||0)) { state=remote; }
-        else { needsSave=true; }
-        if(!state.columns&&!state.tasks) { state=getDefaultState(); needsSave=true; }
-        if(ensureShape()) needsSave=true;
-        if(applyDailyReset()) needsSave=true;
-        try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch(e){}
-        render(); setSyncStatus('online');
-        if(needsSave) saveState();
-      },err=>{ resolved=true; clearTimeout(safetyTimeout); console.error(err); setSyncStatus('offline'); });
-    } catch(e) { resolved=true; clearTimeout(safetyTimeout); console.error(e); setSyncStatus('offline'); }
+    // Sincronización vía peticiones HTTPS normales (fetch), sin conexión
+    // persistente tipo WebSocket. Sondea cada pocos segundos por cambios
+    // de otros dispositivos, en vez de mantener una conexión abierta.
+    await pullRemote();
+    syncTimer = setInterval(pullRemote, 6000);
   }
 
   function saveState() {
     state.lastModified=Date.now();
     try { localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); } catch(e) {}
-    if(stateRef) stateRef.set(state).catch(()=>setSyncStatus('offline'));
+    pushRemote();
   }
 
   // ===== ACCIONES =====
