@@ -13,8 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
 <style>
 :root {
   --bg:#121214; --surface:#1C1C1F; --surface-hover:#232327;
@@ -342,11 +342,27 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     document.getElementById('columns').style.display='grid';
     document.getElementById('extra-section').style.display='block';
     render();
+
+    // === MODO DIAGNÓSTICO: Firebase desactivado temporalmente ===
+    // Para aislar si Firebase/la sincronización es la causa de que la página
+    // se congele en algunas computadoras. Cambiar a false para reactivar.
+    const DIAGNOSTIC_NO_FIREBASE = true;
+    if(DIAGNOSTIC_NO_FIREBASE) { setSyncStatus('local'); return; }
+
     if(firebaseConfig.apiKey.indexOf('PEGA')===0) { setSyncStatus('local'); return; }
+
+    // Timeout de seguridad: si Firebase no responde en 5s, dejar de esperar
+    // y seguir en modo local en vez de quedarse en "conectando..." para siempre
+    let resolved=false;
+    const safetyTimeout=setTimeout(()=>{
+      if(!resolved){ resolved=true; setSyncStatus('offline'); }
+    },5000);
+
     try {
       firebase.initializeApp(firebaseConfig);
       stateRef=firebase.database().ref('agenda-diaria');
       stateRef.on('value',snapshot=>{
+        resolved=true; clearTimeout(safetyTimeout);
         const remote=snapshot.val(); let needsSave=false;
         if(remote&&(remote.lastModified||0)>=(state.lastModified||0)) { state=remote; }
         else { needsSave=true; }
@@ -356,8 +372,8 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
         try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch(e){}
         render(); setSyncStatus('online');
         if(needsSave) saveState();
-      },err=>{ console.error(err); setSyncStatus('offline'); });
-    } catch(e) { console.error(e); setSyncStatus('offline'); }
+      },err=>{ resolved=true; clearTimeout(safetyTimeout); console.error(err); setSyncStatus('offline'); });
+    } catch(e) { resolved=true; clearTimeout(safetyTimeout); console.error(e); setSyncStatus('offline'); }
   }
 
   function saveState() {
