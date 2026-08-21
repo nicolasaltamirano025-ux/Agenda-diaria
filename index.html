@@ -243,6 +243,7 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
 
   let state = null;
   let viewingDateKey = null;
+  let pendingRemoteRender = false;
   let dragState = null;
   let activePicker = null;
 
@@ -363,22 +364,49 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
     }
   }
 
+  function isUserTyping() {
+    const el=document.activeElement;
+    if(!el) return false;
+    return el.isContentEditable || el.tagName==='INPUT';
+  }
+
   async function pullRemote() {
     try {
       const res = await fetchWithTimeout(REST_URL, {method:'GET'}, 6000);
       if(!res.ok) throw new Error('HTTP '+res.status);
       const remote = await res.json();
       let needsSave=false;
-      if(remote && (remote.lastModified||0) >= (state.lastModified||0)) {
+      let changed=false;
+
+      // Comparación ESTRICTA (>): solo adoptamos lo remoto si es genuinamente
+      // más nuevo que lo local. Si es igual, no hay nada que hacer — evita
+      // reconstruir la pantalla en cada sondeo sin motivo real.
+      if(remote && (remote.lastModified||0) > (state.lastModified||0)) {
         state = remote;
+        changed = true;
       } else if(!remote) {
         needsSave = true;
       }
-      if(!state.columns && !state.tasks) { state=getDefaultState(); needsSave=true; }
-      if(ensureShape()) needsSave=true;
-      if(applyDailyReset()) needsSave=true;
+
+      if(!state.columns && !state.tasks) { state=getDefaultState(); needsSave=true; changed=true; }
+      if(ensureShape()) { needsSave=true; changed=true; }
+      if(applyDailyReset()) { needsSave=true; changed=true; }
+
       try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }catch(e){}
-      render();
+
+      // Nunca reconstruir la pantalla mientras el usuario está escribiendo:
+      // le sacaría el foco del campo de texto a medio editar. Si hay un
+      // cambio real pero el usuario está escribiendo, queda pendiente y se
+      // aplica en cuanto suelte el campo (ver listener de 'focusout').
+      if(changed || pendingRemoteRender) {
+        if(isUserTyping()) {
+          pendingRemoteRender = true;
+        } else {
+          render();
+          pendingRemoteRender = false;
+        }
+      }
+
       setSyncStatus('online');
       if(needsSave) pushRemote();
     } catch(e) {
@@ -1184,6 +1212,17 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
   });
   document.getElementById('add-task-btn').addEventListener('click',addExtra);
   document.getElementById('new-task-input').addEventListener('keypress',e=>{if(e.key==='Enter')addExtra();});
+
+  // Si había un cambio remoto esperando porque el usuario estaba escribiendo,
+  // se aplica apenas suelta el campo (sin esperar al siguiente sondeo de 6s)
+  document.addEventListener('focusout',()=>{
+    if(pendingRemoteRender) {
+      setTimeout(()=>{
+        if(pendingRemoteRender && !isUserTyping()) { render(); pendingRemoteRender=false; }
+      },0);
+    }
+  });
+
   loadState();
   if('serviceWorker' in navigator) {
     window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.error(e)));
