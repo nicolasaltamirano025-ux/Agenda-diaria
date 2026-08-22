@@ -187,6 +187,8 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
 .hist-col-title{font-family:'Bebas Neue',sans-serif;letter-spacing:3px;font-size:11px;color:var(--text-dim);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 .hist-col-title:first-of-type{margin-top:0;}
 .hist-task{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px;}
+.hist-task-editable{cursor:pointer;border-radius:6px;padding:6px 8px;margin:0 -8px;transition:background .12s;}
+.hist-task-editable:hover{background:var(--surface-hover);}
 .hist-check{width:16px;height:16px;border-radius:4px;border:2px solid var(--text-dim);flex-shrink:0;display:flex;align-items:center;justify-content:center;}
 .hist-check.done{background:var(--accent);border-color:var(--accent);}
 .hist-label{color:var(--text);}
@@ -1143,46 +1145,99 @@ body.dragging-active{user-select:none;-webkit-user-select:none;}
   }
 
   function renderReadOnlyDay(dateKey) {
-    const data=getDayData(dateKey);
     const columnsEl=document.getElementById('columns');columnsEl.innerHTML='';
-
-    if(!data) {
-      const empty=document.createElement('div');empty.className='agenda-empty';
-      empty.innerHTML='No hay registro guardado para este día.<br>Los días se guardan solos al pasar la medianoche, o al presionar "Reiniciar día".';
-      columnsEl.appendChild(empty);
-      document.getElementById('momentum-fill').style.width='0%';
-      document.getElementById('momentum-text').textContent='0/0 · 0%';
-    } else {
-      let total=0,done=0;
-      data.columns.forEach(col=>col.tasks.forEach(t=>{total++;if(t.done)done++;}));
-      const pct=total?Math.round(done/total*100):0;
-      document.getElementById('momentum-fill').style.width=pct+'%';
-      document.getElementById('momentum-text').textContent=done+'/'+total+' · '+pct+'%';
-
-      data.columns.forEach(col=>{
-        const colDiv=document.createElement('div');colDiv.className='column';
-        const t=document.createElement('div');t.className='hist-col-title';t.textContent=col.title;
-        colDiv.appendChild(t);
-        col.tasks.forEach(task=>{
-          const row=document.createElement('div');row.className='hist-task';
-          const chk=document.createElement('div');chk.className='hist-check'+(task.done?' done':'');
-          if(task.done) chk.innerHTML='<svg width="9" height="9" viewBox="0 0 12 12"><path d="M1 6L4.5 9.5L11 2" stroke="#121214" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-          const lbl=document.createElement('div');lbl.className='hist-label'+(task.done?' done':'');lbl.textContent=task.label;
-          row.appendChild(chk);row.appendChild(lbl);colDiv.appendChild(row);
-        });
-        columnsEl.appendChild(colDiv);
-      });
-    }
-
     const extraSection=document.getElementById('extra-section');
     extraSection.querySelector('.add-row').style.display='none';
     const extraList=document.getElementById('custom-tasks-list');extraList.innerHTML='';
-    if(!data || data.extraCompleted.length===0) {
+
+    let rec=state.history[dateKey];
+
+    if(!rec) {
+      const empty=document.createElement('div');empty.className='agenda-empty';
+      empty.innerHTML='No hay registro guardado para este día.<br>Los días se guardan solos al pasar la medianoche, o al presionar "Reiniciar día".';
+      columnsEl.appendChild(empty);
+
+      const createBtn=document.createElement('button');
+      createBtn.className='btn'; createBtn.style.marginTop='14px';
+      createBtn.textContent='Crear registro para este día';
+      createBtn.addEventListener('click',()=>{
+        state.history[dateKey]={
+          columns: state.columns.map(col=>({
+            title: col.title,
+            tasks: col.tasks.map(t=>({id:t.id,label:t.label,done:false}))
+          })),
+          extraCompleted: [],
+          savedAt: Date.now()
+        };
+        saveState(); render();
+      });
+      columnsEl.appendChild(createBtn);
+
+      document.getElementById('momentum-fill').style.width='0%';
+      document.getElementById('momentum-text').textContent='0/0 · 0%';
+
+      const emptyExtra=document.createElement('div');emptyExtra.className='empty-extra';
+      emptyExtra.textContent='Crea el registro del día para poder añadir lo que completaste.';
+      extraList.appendChild(emptyExtra);
+      return;
+    }
+
+    if(!Array.isArray(rec.extraCompleted)) rec.extraCompleted=[];
+
+    let total=0,done=0;
+    rec.columns.forEach(col=>col.tasks.forEach(t=>{total++;if(t.done)done++;}));
+    const pct=total?Math.round(done/total*100):0;
+    document.getElementById('momentum-fill').style.width=pct+'%';
+    document.getElementById('momentum-text').textContent=done+'/'+total+' · '+pct+'%';
+
+    rec.columns.forEach(col=>{
+      const colDiv=document.createElement('div');colDiv.className='column';
+      const t=document.createElement('div');t.className='hist-col-title';t.textContent=col.title;
+      colDiv.appendChild(t);
+      col.tasks.forEach(task=>{
+        const row=document.createElement('div');row.className='hist-task hist-task-editable';
+        const chk=document.createElement('div');chk.className='hist-check'+(task.done?' done':'');
+        if(task.done) chk.innerHTML='<svg width="9" height="9" viewBox="0 0 12 12"><path d="M1 6L4.5 9.5L11 2" stroke="#121214" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const lbl=document.createElement('div');lbl.className='hist-label'+(task.done?' done':'');lbl.textContent=task.label;
+        row.appendChild(chk);row.appendChild(lbl);
+        row.addEventListener('click',()=>{ task.done=!task.done; saveState(); render(); });
+        colDiv.appendChild(row);
+      });
+      columnsEl.appendChild(colDiv);
+    });
+
+    // Añadir algo completado ese día que no se había registrado
+    const addRow=document.createElement('div');addRow.className='add-row';
+    const addInput=document.createElement('input');addInput.type='text';
+    addInput.placeholder='+ Algo que completaste ese día...';
+    const addBtn=document.createElement('button');addBtn.className='add-btn';addBtn.textContent='Añadir';
+    const doAdd=()=>{
+      const v=addInput.value.trim(); if(!v) return;
+      rec.extraCompleted.push({id:'hist_'+Date.now(),label:v});
+      addInput.value='';
+      saveState(); render();
+    };
+    addBtn.addEventListener('click',doAdd);
+    addInput.addEventListener('keypress',e=>{if(e.key==='Enter')doAdd();});
+    addRow.appendChild(addInput);addRow.appendChild(addBtn);
+    extraList.parentElement.insertBefore(addRow, extraList);
+
+    if(rec.extraCompleted.length===0) {
       const empty=document.createElement('div');empty.className='empty-extra';empty.textContent='Sin pendientes extra completados ese día.';extraList.appendChild(empty);
     } else {
-      data.extraCompleted.forEach(ex=>{
-        const chip=document.createElement('div');chip.className='agenda-chip done-chip';chip.style.cursor='default';
-        chip.textContent=ex.label; extraList.appendChild(chip);
+      rec.extraCompleted.forEach(ex=>{
+        const chip=document.createElement('div');chip.className='agenda-chip done-chip';
+        chip.style.cssText='cursor:default;display:inline-flex;align-items:center;gap:7px;';
+        const txt=document.createElement('span');txt.textContent=ex.label;
+        const del=document.createElement('button');del.innerHTML='&times;';
+        del.style.cssText='background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:15px;line-height:1;padding:0;';
+        del.title='Quitar';
+        del.addEventListener('click',()=>{
+          rec.extraCompleted=rec.extraCompleted.filter(e=>e.id!==ex.id);
+          saveState(); render();
+        });
+        chip.appendChild(txt);chip.appendChild(del);
+        extraList.appendChild(chip);
       });
     }
   }
